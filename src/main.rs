@@ -21,13 +21,8 @@ use lexer::Lexer;
 fn main() {
 	println!("Hello, world!");
 
-	let lex = Lexer::new(String::from("Yoooo"));
+	let mut lex = Lexer::new(String::from("test.ktns"));
 
-	let t = lex.next();
+	lex.next_token();
 
-	if t.is_err() {
-		println!("Woopsi");
-	} else {
-		println!("What?!");
-	}
 }

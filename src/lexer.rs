@@ -15,6 +15,9 @@
  * along with Katanoisi.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use std::io::Read;
+use std::io::BufReader;
+use std::fs::File;
 
 pub enum TokenType {
 	Unknown,
@@ -37,18 +40,54 @@ pub enum Error {
 
 pub struct Lexer {
 	file_path: String,
+	reader: BufReader<File>,
+	curr_char: char,
+	faulty: bool,
 }
 
 impl Lexer {
-	pub fn next(&self) -> Result<Token, Error> {
-		return Err(Error::EndOfFile);
-	}
+	pub fn new(path: String) -> Lexer  {
+		let open_res = File::open(path.clone());
 
-	pub fn new(file_path: String) -> Lexer {
-		return Lexer {file_path: file_path};
+		if let std::io::Result::Ok(f) = open_res {
+			let mut instance = Lexer {
+				file_path: path,
+				reader: BufReader::new(f),
+				curr_char: '\0',
+				faulty: false,
+			};
+
+			instance.faulty = instance.next_char().is_err();
+
+			return instance;
+		}
+		panic!("Could not open file");
 	}
 
 	pub fn new_str(file_path: &str) -> Lexer {
 		return Lexer::new(String::from(file_path));
+	}
+
+	pub fn next_token(&mut self) -> Result<Token, Error> {
+		println!("current char {}", self.curr_char);
+		return Err(Error::EndOfFile);
+	}
+
+	fn next_char(&mut self) -> Result<(), Error> {
+		let mut buffer = [0; 1];
+
+		let res = self.reader.read(&mut buffer);
+		let n = res.unwrap();
+
+		if n == 0 {
+			return Err(Error::EndOfFile);
+		} else {
+			let c = buffer[0] as char;
+
+			self.curr_char = c;
+
+			// TODO: Handle UTF-8
+			return Ok(());
+		}
 	}
 }
