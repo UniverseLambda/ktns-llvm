@@ -36,6 +36,9 @@ pub struct Token {
 pub enum Error {
 	Unknown,
 	EndOfFile,
+	UnexpectedEndOfFile,
+	DecoderError,
+	InvalidCodePoint,
 }
 
 pub struct Lexer {
@@ -70,6 +73,7 @@ impl Lexer {
 
 	pub fn next_token(&mut self) -> Result<Token, Error> {
 		println!("current char {}", self.curr_char);
+
 		return Err(Error::EndOfFile);
 	}
 
@@ -82,11 +86,47 @@ impl Lexer {
 		if n == 0 {
 			return Err(Error::EndOfFile);
 		} else {
-			let c = buffer[0] as char;
+			let c = buffer[0];
 
-			self.curr_char = c;
+			if (c & 0x80) == 0 {
+				self.curr_char = c as char;
+			} else {
+				let mut cp: u32 = 0x00;
+				let mut sup_byte_count = 0;
 
-			// TODO: Handle UTF-8
+				if (c & 0x20) == 0 {
+					sup_byte_count = 1;
+					cp = (c as u32) & 0x1F;
+				} else if (c & 0x10) == 0 {
+					sup_byte_count = 2;
+					cp = (c as u32) & 0x0F;
+				} else if (c & 0x08) == 0 {
+					sup_byte_count = 3;
+					cp = (c as u32) & 0x07;
+				} else {
+					return Err(Error::DecoderError);
+				}
+
+				for _ in 0..sup_byte_count {
+					let res = self.reader.read(&mut buffer);
+					let n = res.unwrap();
+
+					if n == 0 {
+						return Err(Error::UnexpectedEndOfFile);
+					}
+
+					cp = (cp << 6) | ((buffer[0] as u32) & 0x3F);
+				}
+
+				let fromu32_res = std::char::from_u32(cp);
+
+				if fromu32_res.is_none() {
+					return Err(Error::InvalidCodePoint);
+				}
+
+				self.curr_char = fromu32_res.unwrap();
+			}
+
 			return Ok(());
 		}
 	}
