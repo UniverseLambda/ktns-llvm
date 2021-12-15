@@ -23,6 +23,19 @@ fn main() {
 
 	let mut lex = Lexer::new(String::from("test.ktns"));
 
-	lex.next_token();
+
+	loop {
+		match lex.next_token() {
+			Ok(token) => println!("Token content: `{}'", token.content),
+			Err(err) => {
+				if let lexer::Error::EndOfFile = err {
+					println!("Done :)");
+					break;
+				}
+				println!("Lexer error: {}", err.to_string());
+				break
+			},
+		}
+	}
 
 }

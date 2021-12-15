@@ -18,6 +18,7 @@
 use std::io::Read;
 use std::io::BufReader;
 use std::fs::File;
+use std::fmt;
 
 pub enum TokenType {
 	Unknown,
@@ -25,20 +26,50 @@ pub enum TokenType {
 	StringLiteral,
 	CharLiteral,
 	Keyword,
-	Identifier
+	Identifier,
+	Operator
 }
 
 pub struct Token {
-	token_type: TokenType,
-	content: String,
+	pub token_type: TokenType,
+	pub content: String,
 }
 
+#[derive(Debug)]
 pub enum Error {
 	Unknown,
+	InternalError,
 	EndOfFile,
 	UnexpectedEndOfFile,
 	DecoderError,
 	InvalidCodePoint,
+	InvalidCharacter,
+	InvalidToken,
+}
+
+impl fmt::Display for Error {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		let s = match self {
+			Error::Unknown => "Unknown",
+			Error::InternalError => "InternalError",
+			Error::EndOfFile => "EndOfFile",
+			Error::UnexpectedEndOfFile => "UnexpectedEndOfFile",
+			Error::DecoderError => "DecoderError",
+			Error::InvalidCodePoint => "InvalidCodePoint",
+			Error::InvalidCharacter => "InvalidCharacter",
+			Error::InvalidToken => "InvalidToken",
+		};
+
+		write!(f, "{:?}", s)
+	}
+}
+
+enum LexerMode {
+	// Error,
+	Word,
+	Number,
+	String(bool, bool),
+	Operator,
 }
 
 pub struct Lexer {
@@ -67,14 +98,189 @@ impl Lexer {
 		panic!("Could not open file");
 	}
 
-	pub fn new_str(file_path: &str) -> Lexer {
-		return Lexer::new(String::from(file_path));
-	}
+	// pub fn new_str(file_path: &str) -> Lexer {
+	// 	return Lexer::new(String::from(file_path));
+	// }
 
 	pub fn next_token(&mut self) -> Result<Token, Error> {
 		println!("current char {}", self.curr_char);
 
-		return Err(Error::EndOfFile);
+		let mut buff = String::default();
+
+		while self.curr_char.is_whitespace() {
+			let res = self.next_char();
+
+			if res.is_err() {
+				return Err(res.unwrap_err());
+			}
+		}
+
+		let mut mode: LexerMode = if self.curr_char.is_alphabetic() || self.curr_char == '_' {
+			LexerMode::Word
+		} else if self.curr_char.is_numeric() {
+			LexerMode::Number
+		} else if self.curr_char == '"' {
+			LexerMode::String(false, false)
+		} else if is_operator(self.curr_char) {
+			LexerMode::Operator
+		} else {
+			return Err(Error::InvalidCharacter);
+		};
+
+		buff.push(self.curr_char);
+
+		loop {
+			if let Result::Err(error) = self.next_char() {
+				if let Error::EndOfFile = error {
+					break;
+				}
+
+				return Err(error);
+			}
+
+			let res = match mode {
+				LexerMode::Word => self.handle_word(&mut buff),
+				LexerMode::Number => self.handle_number(&mut buff),
+				LexerMode::String(_, _) => self.handle_string(&mut buff, &mode),
+				LexerMode::Operator => self.handle_operator(&mut buff, &mut mode),
+			};
+
+			if let Result::Ok(complete) = res {
+				if complete {
+					break;
+				}
+			}
+		}
+
+		let res = match mode {
+			LexerMode::Word => self.finalize_word(&mut buff),
+			LexerMode::Number => self.finalize_number(&mut buff),
+			LexerMode::String(_, _) => self.finalize_string(&mut buff),
+			LexerMode::Operator => self.finalize_operator(&mut buff),
+		};
+
+		if let Ok(token) = res {
+			if token.content == "//" {
+				while self.curr_char != '\n' {
+					if let Result::Err(error) = self.next_char() {
+						return Err(error);
+					}
+				}
+				return self.next_token();
+			}
+			Ok(token)
+		} else {
+			res
+		}
+	}
+
+	fn handle_word(&mut self, buff: &mut String) -> Result<bool, Error> {
+		let c = self.curr_char;
+
+		if !c.is_alphanumeric() && c != '_' {
+			return Ok(true);
+		}
+
+		buff.push(self.curr_char);
+
+		return Ok(false);
+	}
+
+	// TODO: handle different base (ie: other than base 10)
+	fn handle_number(&mut self, buff: &mut String) -> Result<bool, Error> {
+		let c = self.curr_char;
+
+		if !c.is_numeric() {
+			if c.is_alphabetic() || c == '_' {
+				return Err(Error::InvalidCharacter);
+			}
+			return Ok(true);
+		}
+
+		buff.push(self.curr_char);
+
+		Ok(false)
+	}
+
+	fn handle_string(&mut self, buff: &mut String, mode: &LexerMode) -> Result<bool, Error> {
+		let c = self.curr_char;
+
+		if let LexerMode::String(complete, escape) = mode {
+			if *complete {
+				Ok(true)
+			} else if c != '"' || *escape {
+				buff.push(c);
+				Ok(false)
+			} else {
+				Ok(true)
+			}
+		} else {
+			Err(Error::InternalError)
+		}
+	}
+
+	fn handle_operator(&mut self, buff: &mut String, mode: &mut LexerMode) -> Result<bool, Error> {
+		let c = self.curr_char;
+
+		if buff.len() > 2 {
+			return Ok(true);
+		}
+
+		if buff.len() == 2 {
+			if buff == ">>" && c == '>' {
+				buff.push(c);
+				return Ok(false);
+			}
+			return Ok(true);
+		}
+
+		// TODO: handle more radix
+		if buff.starts_with('-') && c.is_numeric() {
+			buff.push(c);
+			*mode = LexerMode::Number;
+			return Ok(false);
+		}
+
+		if buff.starts_with(c) {
+			return match c {
+				'-' | '+' | '=' | '/' | '&' | '|' => {
+					buff.push(c);
+					Ok(false)
+				},
+				_ => Ok(true)
+			}
+		}
+
+		if (buff.starts_with('<') && c == '=') || (buff.starts_with('>') && c == '=') || (buff.starts_with('/') && c == '*') {
+			buff.push(c);
+			return Ok(false);
+		}
+		Ok(true)
+	}
+
+	fn finalize_word(&mut self, buff: &mut String) -> Result<Token, Error> {
+		let mut tk_type = TokenType::Identifier;
+		let keywords = ["fn", "true", "false", "u8", "u16", "u32", "u64", "bool", "return", "if", "else", "void"];
+
+		for k in keywords {
+			if buff == k {
+				tk_type = TokenType::Keyword;
+			}
+		}
+
+		Ok(Token { content: buff.clone(), token_type: tk_type })
+	}
+
+	fn finalize_number(&mut self, buff: &mut String) -> Result<Token, Error> {
+		Ok(Token { content: buff.clone(), token_type: TokenType::IntegerLiteral })
+	}
+
+	fn finalize_string(&mut self, buff: &mut String) -> Result<Token, Error> {
+		Ok(Token { content: buff.clone(), token_type: TokenType::StringLiteral })
+	}
+
+	fn finalize_operator(&mut self, buff: &mut String) -> Result<Token, Error> {
+		Ok(Token { content: buff.clone(), token_type: TokenType::Operator })
 	}
 
 	fn next_char(&mut self) -> Result<(), Error> {
@@ -91,8 +297,8 @@ impl Lexer {
 			if (c & 0x80) == 0 {
 				self.curr_char = c as char;
 			} else {
-				let mut cp: u32 = 0x00;
-				let mut sup_byte_count = 0;
+				let mut cp: u32;
+				let sup_byte_count: u32;
 
 				if (c & 0x20) == 0 {
 					sup_byte_count = 1;
@@ -129,5 +335,17 @@ impl Lexer {
 
 			return Ok(());
 		}
+	}
+}
+
+// TODO: Lexer: probably more operators?
+fn is_operator(c: char) -> bool {
+	match c {
+		'+' | '-' | '*' | '/'
+			| ',' | '.'
+			| '=' | '>' | '<' | '|' | '&'
+			| '?' | ':'
+			| ';' | '(' | ')' | '[' | ']' | '{' | '}' => true,
+		_ => false
 	}
 }
