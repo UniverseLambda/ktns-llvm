@@ -1,0 +1,31 @@
+// This code is in the "primary context"
+uint test = 5;
+uint test2 = 10;
+
+func increment() {
+	++test;
+}
+
+func main() {
+	// increment the "test" variable in the primary context.
+	increment();
+
+	context one {
+		uint test = 6;
+		// increment the "test" variable in the "one" context.
+		increment();
+	};
+	// exiting this context dealloc the "test" variable of the "one" context.
+
+	// transparently increment the "test" variable in the primary context.
+	context two increment();
+
+	// increment test2 in the primary context
+	context third(test->test2) increment();
+
+	// increment nothing but won't fault. The value of "test" is and stays the default value of "uint" -> 0
+	context fourth(test->void) increment();
+
+	// increment the "test" variable in the fifth context
+	context fifth (test) increment();
+}
