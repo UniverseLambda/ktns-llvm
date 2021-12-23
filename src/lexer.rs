@@ -18,8 +18,8 @@
 use std::io::Read;
 use std::io::BufReader;
 use std::fs::File;
-use std::fmt;
 
+#[derive(Debug)]
 pub enum TokenType {
 	Unknown,
 	IntegerLiteral,
@@ -45,23 +45,6 @@ pub enum Error {
 	InvalidCodePoint,
 	InvalidCharacter,
 	InvalidToken,
-}
-
-impl fmt::Display for Error {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		let s = match self {
-			Error::Unknown => "Unknown",
-			Error::InternalError => "InternalError",
-			Error::EndOfFile => "EndOfFile",
-			Error::UnexpectedEndOfFile => "UnexpectedEndOfFile",
-			Error::DecoderError => "DecoderError",
-			Error::InvalidCodePoint => "InvalidCodePoint",
-			Error::InvalidCharacter => "InvalidCharacter",
-			Error::InvalidToken => "InvalidToken",
-		};
-
-		write!(f, "{:?}", s)
-	}
 }
 
 enum LexerMode {
@@ -103,8 +86,6 @@ impl Lexer {
 	// }
 
 	pub fn next_token(&mut self) -> Result<Token, Error> {
-		println!("current char {}", self.curr_char);
-
 		let mut buff = String::default();
 
 		while self.curr_char.is_whitespace() {

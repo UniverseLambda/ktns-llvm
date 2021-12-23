@@ -15,27 +15,9 @@
  * along with Katanoisi.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-mod lexer;
-mod parser;
-use lexer::Lexer;
+extern crate inkwell as llvm;
 
-fn main() {
-	println!("Hello, world!");
+use crate::lexer::Token;
 
-	let mut lex = Lexer::new(String::from("test.ktns"));
-
-	loop {
-		match lex.next_token() {
-			Ok(token) => println!("Token content: `{}' ({:?})", token.content, token.token_type),
-			Err(err) => {
-				if let lexer::Error::EndOfFile = err {
-					println!("Done :)");
-					break;
-				}
-				println!("Lexer error: {:?}", err);
-				break
-			},
-		}
-	}
-
+pub trait ASTNode {
 }
